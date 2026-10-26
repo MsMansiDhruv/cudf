@@ -10,7 +10,9 @@ description: Build the first native, single-GPU cuDF path in a query engine, or 
 
 ## Outcome and scope
 
-Build the first native cuDF proof of concept in the target engine for a query-engine engineer. Produce working target-engine code, a runnable single-GPU program, and a correctness result, not only advice.
+Build the first native cuDF proof of concept in the target engine for a query-engine
+engineer. Produce working target-engine code, a runnable single-GPU program, and a
+correctness result, not only advice.
 
 The POC may cover one operator, a sequence of operators, or a query selected for the POC. Do not reduce it to one operator by default. If a smaller increment is needed for feasibility or safe implementation, explain why and preserve the path to the requested POC.
 
