@@ -396,7 +396,8 @@ jobs:
       date: ${{ inputs.date }}
       package-name: cudf_polars
       package-type: python
-      publish-wheel-search-key: cudf_wheel_python_cudf-polars
+      # trailing underscore to avoid collision with `cudf-polars-quent`
+      publish-wheel-search-key: cudf_wheel_python_cudf-polars_
   trigger-pandas-tests:
     if: inputs.build_type == 'nightly'
     needs: wheel-build
