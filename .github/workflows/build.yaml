@@ -182,7 +182,7 @@ jobs:
       # abi3-py312 wheels only need one build per architecture/platform.
       matrix_filter: 'map(select(.PY_VER == "3.12" and .CUDA_VER == "12.9.2"))'
   cudf-polars-quent:
-    needs: [build-details, telemetry-setup, cudf-polars-quent-build-matrix]
+    needs: [build-details, cudf-polars-quent-build-matrix]
     permissions:
       actions: read
       contents: read
