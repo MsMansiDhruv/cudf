@@ -357,7 +357,7 @@ jobs:
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       node_type: cpu8
       arch: "amd64"
-      container_image: "rapidsai/ci-conda:26.12-cuda12.9.2-rockylinux8-py3.12"
+      container_image: "rapidsai/ci-conda:26.12-latest"
       script: "ci/test_cudf_polars_quent.sh"
       file_to_upload: "python/cudf_polars/quent/bridge/target/wheels/*.whl"
       artifact-name: "cudf_wheel_python_cudf-polars-quent_x86_64_abi3"
