@@ -60,26 +60,19 @@ def deletion_mask(
             file_positions = _iceberg_positions(
                 index, path, lake_options, puffin_cache, stream=stream
             )
-            if file_positions is not None:
-                positions.append(
-                    file_positions
-                    if offset == 0
-                    else plc.binaryop.binary_operation(
-                        file_positions,
-                        plc.Scalar.from_py(
-                            offset, plc.DataType(plc.TypeId.INT64), stream=stream
-                        ),
-                        plc.binaryop.BinaryOperator.ADD,
-                        plc.DataType(plc.TypeId.INT64),
-                        stream=stream,
-                    )
-                )
         else:
-            deleted = (
-                selection.fill_null(value=False).not_().arg_true().cast(pl.Int64)
-                + offset
+            file_positions = plc.Column.from_arrow(
+                selection.fill_null(value=False)
+                .not_()
+                .arg_true()
+                .cast(pl.Int64)
+                .to_arrow(),
+                stream=stream,
             )
-            positions.append(plc.Column.from_arrow(deleted.to_arrow(), stream=stream))
+        if file_positions is not None:
+            positions.append(
+                _scan_positions(file_positions, num_rows, offset, stream=stream)
+            )
         offset += num_rows
     keep = plc.Column.from_scalar(
         plc.Scalar.from_py(
@@ -149,6 +142,45 @@ def apply_deletions(
         ).num_rows()
         return DataFrame([], num_rows=kept_count, stream=stream)
     return df.filter(mask)
+
+
+def _scan_positions(
+    file_positions: plc.Column, num_rows: int, offset: int, *, stream: Stream
+) -> plc.Column:
+    """Positions within the scan of the deleted rows that exist in one data file."""
+    int64 = plc.DataType(plc.TypeId.INT64)
+    bool8 = plc.DataType(plc.TypeId.BOOL8)
+    in_file = plc.binaryop.binary_operation(
+        plc.binaryop.binary_operation(
+            file_positions,
+            plc.Scalar.from_py(0, int64, stream=stream),
+            plc.binaryop.BinaryOperator.GREATER_EQUAL,
+            bool8,
+            stream=stream,
+        ),
+        plc.binaryop.binary_operation(
+            file_positions,
+            plc.Scalar.from_py(num_rows, int64, stream=stream),
+            plc.binaryop.BinaryOperator.LESS,
+            bool8,
+            stream=stream,
+        ),
+        plc.binaryop.BinaryOperator.LOGICAL_AND,
+        bool8,
+        stream=stream,
+    )
+    (kept,) = plc.stream_compaction.apply_retention_mask(
+        plc.Table([file_positions]), in_file, stream=stream
+    ).columns()
+    if offset == 0:
+        return kept
+    return plc.binaryop.binary_operation(
+        kept,
+        plc.Scalar.from_py(offset, int64, stream=stream),
+        plc.binaryop.BinaryOperator.ADD,
+        int64,
+        stream=stream,
+    )
 
 
 def _iceberg_positions(

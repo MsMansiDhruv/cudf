@@ -833,16 +833,25 @@ def _puffin(deleted: dict[str, list[int]]) -> bytes:
     )
 
 
+@pytest.fixture(params=["within_files", "past_file_ends"])
+def deleted_positions(request: pytest.FixtureRequest) -> dict[int, list[int]]:
+    if request.param == "within_files":
+        return {0: [0, 3], 2: [1]}
+    return {0: [0, 100], 1: [4], 2: [1]}
+
+
 @pytest.fixture(
     params=["position_deletes", "deletion_vectors", "delta", "delta_partitioned"]
 )
 def deleted_rows_scan(
-    request: pytest.FixtureRequest, tmp_path: Path, iceberg_catalog: SqlCatalog
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+    iceberg_catalog: SqlCatalog,
+    deleted_positions: dict[int, list[int]],
 ) -> pl.LazyFrame:
     frames = [
         pl.DataFrame({"a": [4 * index + i for i in range(4)]}) for index in range(3)
     ]
-    deleted = {0: [0, 3], 2: [1]}
     if request.param in ("position_deletes", "deletion_vectors"):
         tbl = iceberg_catalog.create_table(
             "ns.deleted",
@@ -855,7 +864,7 @@ def deleted_rows_scan(
         paths = [task.file.file_path for task in tbl.scan().plan_files()]
         if request.param == "position_deletes":
             position_deletes = {}
-            for index, positions in deleted.items():
+            for index, positions in deleted_positions.items():
                 path = tmp_path / "deletes" / f"{index}.parquet"
                 pl.LazyFrame(
                     {"file_path": [paths[index]] * len(positions)}
@@ -868,12 +877,20 @@ def deleted_rows_scan(
             )
         puffin = tmp_path / "deletes.puffin"
         puffin.write_bytes(
-            _puffin({paths[index]: positions for index, positions in deleted.items()})
+            _puffin(
+                {
+                    paths[index]: positions
+                    for index, positions in deleted_positions.items()
+                }
+            )
         )
         return _scan_iceberg_files(
             tbl,
             paths,
-            _deletion_files=("iceberg", ({}, dict.fromkeys(deleted, str(puffin)))),
+            _deletion_files=(
+                "iceberg",
+                ({}, dict.fromkeys(deleted_positions, str(puffin))),
+            ),
         )
     paths = []
     for index, frame in enumerate(frames):
@@ -882,7 +899,7 @@ def deleted_rows_scan(
         paths.append(str(path))
     selections = {
         paths[index]: [i not in positions for i in range(max(positions) + 1)]
-        for index, positions in deleted.items()
+        for index, positions in deleted_positions.items()
     }
 
     def selection_vectors(requested: pl.DataFrame) -> pl.DataFrame:
