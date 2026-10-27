@@ -81,6 +81,17 @@ def deletion_mask(
             )
             positions.append(plc.Column.from_arrow(deleted.to_arrow(), stream=stream))
         offset += num_rows
+    keep = plc.Column.from_scalar(
+        plc.Scalar.from_py(
+            True,  # noqa: FBT003
+            plc.DataType(plc.TypeId.BOOL8),
+            stream=stream,
+        ),
+        offset,
+        stream=stream,
+    )
+    if not positions:
+        return Column(keep, dtype=DataType(pl.Boolean()))
     (mask,) = plc.copying.scatter(
         [
             plc.Scalar.from_py(
@@ -96,19 +107,7 @@ def deletion_mask(
             plc.DataType(plc.types.SIZE_TYPE_ID),
             stream=stream,
         ),
-        plc.Table(
-            [
-                plc.Column.from_scalar(
-                    plc.Scalar.from_py(
-                        True,  # noqa: FBT003
-                        plc.DataType(plc.TypeId.BOOL8),
-                        stream=stream,
-                    ),
-                    offset,
-                    stream=stream,
-                )
-            ]
-        ),
+        plc.Table([keep]),
         stream=stream,
     ).columns()
     return Column(mask, dtype=DataType(pl.Boolean()))
