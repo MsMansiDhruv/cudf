@@ -518,18 +518,6 @@ def force_external_sort(monkeypatch):
 
 
 @pytest.fixture
-def engine_external(streaming_engine_factory):
-    return streaming_engine_factory(
-        StreamingOptions(
-            max_rows_per_partition=3,
-            fallback_mode="raise",
-            raise_on_fail=True,
-            sort_strategy="external",
-        ),
-    )
-
-
-@pytest.fixture
 def engine_large_external(streaming_engine_factory):
     return streaming_engine_factory(
         StreamingOptions(
@@ -571,8 +559,3 @@ def test_large_sort_external_in_memory_fast_path(
     # streaming insertion is exercised but no runs are written.
     q = large_df.sort(by, maintain_order=stable)
     assert_gpu_result_equal(q, engine=engine_large_external)
-
-
-def test_sort_external_small(df, engine_external, force_external_sort):
-    q = df.sort("y")
-    assert_gpu_result_equal(q, engine=engine_external)

@@ -22,13 +22,14 @@ from cudf_polars.dsl.ir import IRExecutionContext
 from cudf_polars.engine.options import StreamingOptions
 from cudf_polars.streaming.actor_graph.collectives import external_sort as es
 from cudf_polars.testing.asserts import assert_gpu_result_equal
-from cudf_polars.testing.engine_utils import get_blocksize_mode
 from cudf_polars.utils import sorting
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pylibcudf as plc
+
+pytestmark = pytest.mark.engine_params(["spmd", "dask", "ray"])
 
 # --------------------------------------------------------------------------- #
 # Fixtures
@@ -56,20 +57,7 @@ def force_disk(monkeypatch):
 
 
 @pytest.fixture
-def skip_small_chunks(streaming_engine):
-    """
-    Skip the small-chunk engine variants (``spmd-small``).
-
-    Their tiny ``target_partition_size`` survives ``BASE`` and splits each query
-    into thousands of mostly empty partitions, which only multiplies run time
-    here; ``test_sort.py`` covers the external sort with small chunks.
-    """
-    if get_blocksize_mode(streaming_engine) == "small":
-        pytest.skip("small-chunk engine variant; covered by test_sort.py")
-
-
-@pytest.fixture
-def engine_external(skip_small_chunks, streaming_engine_factory):
+def engine_external(streaming_engine_factory):
     return streaming_engine_factory(StreamingOptions(**BASE))
 
 
@@ -413,7 +401,6 @@ def _require_in_process(engine) -> None:
         pytest.skip("requires an in-process (SPMD) engine for monkeypatching")
 
 
-@pytest.mark.usefixtures("skip_small_chunks")
 def test_external_sort_uses_and_cleans_disk_spill_dir(
     streaming_engine_factory, force_disk, tmp_path
 ) -> None:
@@ -439,7 +426,6 @@ def test_external_sort_uses_and_cleans_disk_spill_dir(
     assert _spill_files(spill) == []
 
 
-@pytest.mark.usefixtures("skip_small_chunks")
 def test_external_sort_releases_run_pages_on_failure(
     streaming_engine_factory, force_disk, tmp_path, monkeypatch
 ) -> None:

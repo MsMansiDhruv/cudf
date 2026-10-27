@@ -38,8 +38,6 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import polars as pl
-
 import pylibcudf as plc
 from cudf_streaming.channel_metadata import ChannelMetadata, Partitioning
 from cudf_streaming.partition_utils import (
@@ -55,15 +53,14 @@ from rapidsmpf.shuffler import PartitionAssignment
 from rapidsmpf.streaming.core.memory_reserve_or_wait import reserve_memory
 from rapidsmpf.streaming.core.message import Message
 
-from cudf_polars.containers import DataType
-from cudf_polars.dsl.expr import Col, NamedExpr
-from cudf_polars.dsl.ir import Sort
-from cudf_polars.dsl.utils.naming import names_to_indices, unique_names
+from cudf_polars.dsl.utils.naming import names_to_indices
 from cudf_polars.streaming.actor_graph.collectives.shuffle import ShuffleManager
 from cudf_polars.streaming.actor_graph.collectives.sort_utils import (
+    append_row_sequence_column,
     build_order_scheme,
+    build_post_sort_ir,
     compute_sort_boundaries,
-    find_sort_splits,
+    insert_chunk_with_sort_splits,
     select_local_split_candidates,
     sort_to_order_keys,
 )
@@ -77,7 +74,7 @@ from cudf_polars.streaming.actor_graph.utils import (
     send_metadata,
 )
 from cudf_polars.utils.config import get_total_device_memory
-from cudf_polars.utils.cuda_stream import get_joined_cuda_stream, join_cuda_streams
+from cudf_polars.utils.cuda_stream import join_cuda_streams
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -91,7 +88,7 @@ if TYPE_CHECKING:
     from rmm.pylibrmm.stream import Stream
 
     from cudf_polars.containers import DataFrame
-    from cudf_polars.dsl.ir import IRExecutionContext
+    from cudf_polars.dsl.ir import IRExecutionContext, Sort
     from cudf_polars.streaming.actor_graph.tracing import ActorTracer
     from cudf_polars.typing import Schema
     from cudf_polars.utils.config import StreamingExecutor
@@ -636,20 +633,10 @@ class _ChunkPreparer:
             self._ir,
         )
         if self._ir.stable:
-            nrows = df.table.num_rows()
-            start = (self._comm.rank * (1 << 48)) + self._local_row_offset
-            seq_id_col = plc.filling.sequence(
-                nrows,
-                plc.Scalar.from_py(
-                    start, plc.DataType(plc.TypeId.UINT64), stream=df.stream
-                ),
-                plc.Scalar.from_py(
-                    1, plc.DataType(plc.TypeId.UINT64), stream=df.stream
-                ),
-                stream=df.stream,
+            tbl = append_row_sequence_column(
+                df, self._comm.rank, self._local_row_offset
             )
-            self._local_row_offset += nrows
-            tbl = plc.Table([*df.table.columns(), seq_id_col])
+            self._local_row_offset += tbl.num_rows()
         else:
             tbl = df.table
         return msg.sequence_number, df, tbl
@@ -685,26 +672,6 @@ class _ChunkPreparer:
         return prepared_sample, local_candidates_list
 
 
-def _post_sort_ir(ir: Sort) -> Sort:
-    """The Sort applied to each received partition (adds the stable-sort key)."""
-    if not ir.stable:
-        return ir
-    assert ir.zlice is None
-    seq_id_name = next(unique_names(ir.schema.keys()))
-    return Sort(
-        ir.schema | {seq_id_name: DataType(pl.UInt64())},
-        (
-            *ir.by,
-            NamedExpr(seq_id_name, Col(DataType(pl.UInt64()), seq_id_name)),
-        ),
-        (*ir.order, plc.types.Order.ASCENDING),
-        (*ir.null_order, plc.types.NullOrder.AFTER),
-        ir.stable,
-        None,
-        ir.children[0],
-    )
-
-
 async def _stream_chunks_into_shuffle(
     context: Context,
     comm: Communicator,
@@ -727,34 +694,21 @@ async def _stream_chunks_into_shuffle(
     At most one input chunk (plus shuffler-owned packed buffers, which
     rapidsmpf spills — to disk when configured) is resident per rank.
     """
-    column_order = list(ir.order)
-    null_order = list(ir.null_order)
     by_indices = names_to_indices(tuple(by), ir.schema)
 
     skip_insert = metadata_in.duplicated and comm.rank != 0
 
     async def insert_prepared(seq_num: int, chunk: TableChunk) -> None:
-        # The chunk's data moves into shuffler-owned packed buffers,
-        # nothing lasting is added.
-        available_chunk, _ = await make_table_chunks_available_or_wait(
-            context, chunk, reserve_extra=0, net_memory_delta=0
-        )
-        tbl = available_chunk.table_view()
-        sort_cols_tbl = plc.Table([tbl.columns()[i] for i in by_indices])
-        stream = get_joined_cuda_stream(
-            ir_context.get_cuda_stream,
-            upstreams=(available_chunk.stream, sort_boundaries_df.stream),
-        )
-        splits = find_sort_splits(
-            sort_cols_tbl,
-            sort_boundaries_df.table,
+        await insert_chunk_with_sort_splits(
+            context,
+            inserter,
+            chunk,
             seq_num,
-            column_order,
-            null_order,
-            stream=stream,
-            chunk_relative=True,
+            ir,
+            ir_context,
+            sort_boundaries_df,
+            by_indices,
         )
-        await inserter.insert_split(available_chunk, splits)
 
     async with shuffle.inserting() as inserter:
         # 1. The sampled prefix, already sorted and sequence-tagged.
@@ -865,7 +819,7 @@ async def global_sort_external(
         by,
     )
 
-    order_keys = sort_to_order_keys(_post_sort_ir(ir))
+    order_keys = sort_to_order_keys(build_post_sort_ir(ir))
     batch_bytes = batch_bytes_for(executor.target_partition_size)
     any_external = False
     for partition_id in shuffle.local_partitions():
