@@ -186,8 +186,8 @@ def flat_delta(tmp_path: Path) -> str:
 
 
 @pytest.fixture
-def deleted_rows_delta(tmp_path: Path) -> str:
-    path = tmp_path / "delta_deleted"
+def copy_on_write_delta(tmp_path: Path) -> str:
+    path = tmp_path / "delta_copy_on_write"
     pl.LazyFrame({"a": list(range(10)), "b": [f"s{i}" for i in range(10)]}).sink_delta(
         str(path),
         mode="overwrite",
@@ -220,7 +220,7 @@ def partitioned_delta(tmp_path: Path) -> str:
         "promoted_iceberg",
         "partitioned_iceberg",
         "partitioned_delta",
-        "deleted_rows_delta",
+        "copy_on_write_delta",
     ],
 )
 def test_scan_lake(
@@ -276,7 +276,7 @@ PARTITIONED_PREDICATES = [
             for table in ("partitioned_iceberg", "partitioned_delta")
             for p in PARTITIONED_PREDICATES
         ),
-        ("deleted_rows_delta", pl.col("a") > 4),
+        ("copy_on_write_delta", pl.col("a") > 4),
     ],
 )
 def test_scan_lake_predicate(
