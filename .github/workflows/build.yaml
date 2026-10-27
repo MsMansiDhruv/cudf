@@ -179,8 +179,9 @@ jobs:
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
       matrix_name: conda-python-build
-      # abi3-py312 wheels only need one build per architecture/platform.
-      matrix_filter: 'map(select(.PY_VER == "3.12" and .CUDA_VER == "12.9.2"))'
+      # The wheel is abi3 and has no CUDA dependency, so build one per architecture:
+      # pick the entry with the oldest Python, then the oldest CUDA.
+      matrix_filter: group_by(.ARCH) | map(min_by([(.PY_VER | split(".") | map(tonumber)), (.CUDA_VER | split(".") | map(tonumber))]))
   cudf-polars-quent:
     needs: [build-details, cudf-polars-quent-build-matrix]
     permissions:
