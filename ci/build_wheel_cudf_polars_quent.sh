@@ -10,42 +10,7 @@ cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")"/../
 # shellcheck source=ci/build_wheel_common.sh
 source ./ci/build_wheel_common.sh
 
-readonly RUST_VERSION=1.97
-readonly RUSTUP_VERSION=1.29.2
-export RUSTUP_HOME="${RUSTUP_HOME:-/tmp/rustup}"
-export CARGO_HOME="${CARGO_HOME:-/tmp/cargo}"
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
-export PATH="${CARGO_HOME}/bin:${PATH}"
-
-case "$(uname -m)" in
-  x86_64)
-    rustup_target=x86_64-unknown-linux-gnu
-    rustup_sha256=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4
-    ;;
-  aarch64)
-    rustup_target=aarch64-unknown-linux-gnu
-    rustup_sha256=a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697
-    ;;
-  *)
-    echo "Unsupported architecture for rustup: $(uname -m)" >&2
-    exit 1
-    ;;
-esac
-
-rustup_init="$(mktemp)"
-rapids-retry curl --proto '=https' --tlsv1.2 --silent --show-error --fail \
-  "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${rustup_target}/rustup-init" \
-  --output "${rustup_init}"
-printf '%s  %s\n' "${rustup_sha256}" "${rustup_init}" | sha256sum --check --status -
-chmod +x "${rustup_init}"
-"${rustup_init}" \
-  -y \
-  --no-modify-path \
-  --profile minimal \
-  --default-toolchain "${RUST_VERSION}" \
-  -c rustfmt \
-  -c clippy
-rm -f "${rustup_init}"
 
 export RAPIDS_PACKAGE_VERSION
 RAPIDS_PACKAGE_VERSION=$(<VERSION)

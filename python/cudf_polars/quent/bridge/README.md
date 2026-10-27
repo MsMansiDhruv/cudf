@@ -55,8 +55,8 @@ the `bridge` and `analyzer`. To update Quent:
    packages that stub alongside the extension so editors and static type
    checkers can use the generated API from the installed distribution.
 
-4. Install the pinned Rust toolchain if needed, then run the portable build,
-   lint, and test script:
+4. Install Rust, Cargo, Clippy, and rustfmt if needed, then run the portable
+   build, lint, and test script:
 
    ```sh
    ./ci/run_cudf_polars_quent_tests.sh

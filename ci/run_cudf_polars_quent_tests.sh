@@ -12,7 +12,9 @@ TRACKED_STUB="${BRIDGE_DIR}/cudf_polars_quent.pyi"
 
 pushd "${BRIDGE_DIR}"
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
+# Clippy 1.92 flags nested conditionals in the generated PyO3 bridge. Keep all
+# other warnings denied while allowing that generated-code lint.
+cargo clippy --locked --all-targets -- -D warnings -A clippy::collapsible_else_if
 cargo check --locked
 cargo clean -p cudf-polars-quent
 rm -f dist/*.whl target/wheels/*.whl
