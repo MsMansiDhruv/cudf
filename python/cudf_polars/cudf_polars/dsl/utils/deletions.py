@@ -215,6 +215,7 @@ def _iceberg_positions(
                 PuffinFile(Path(puffin).read_bytes())
             )
         }
-    return plc.Column.from_arrow(
-        puffin_cache[puffin][path].cast("int64"), stream=stream
-    )
+    vector = puffin_cache[puffin].get(path)
+    if vector is None:
+        return None
+    return plc.Column.from_arrow(vector.cast("int64"), stream=stream)

@@ -935,3 +935,31 @@ def test_scan_lake_deletions(
     engine: pl.GPUEngine, deleted_rows_scan: pl.LazyFrame, query: Any
 ) -> None:
     assert_gpu_result_equal(query(deleted_rows_scan), engine=engine)
+
+
+@pytest.mark.parametrize(
+    "mapped", [(0, 1, 2), (1, 2)], ids=["some_missing", "all_missing"]
+)
+def test_scan_iceberg_deletion_vector_missing_from_puffin(
+    engine: pl.GPUEngine,
+    iceberg_catalog: SqlCatalog,
+    tmp_path: Path,
+    mapped: tuple[int, ...],
+) -> None:
+    tbl = iceberg_catalog.create_table(
+        "ns.deleted",
+        schema=pyiceberg.schema.Schema(NestedField(1, "a", LongType(), required=False)),
+    )
+    for index in range(3):
+        pl.DataFrame({"a": [4 * index + i for i in range(4)]}).write_iceberg(
+            tbl, mode="append"
+        )
+    paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    puffin = tmp_path / "deletes.puffin"
+    puffin.write_bytes(_puffin({paths[0]: [0, 3]}))
+    q = _scan_iceberg_files(
+        tbl,
+        paths,
+        _deletion_files=("iceberg", ({}, dict.fromkeys(mapped, str(puffin)))),
+    )
+    assert_gpu_result_equal(q.sort("a"), engine=engine)
