@@ -16,7 +16,17 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo check --locked
 cargo clean -p cudf-polars-quent
 rm -f target/wheels/*.whl
-python -m maturin build --release --locked
+# maturin reads the wheel version from Cargo.toml, which needs SemVer: strip leading zeros
+# rapids-pre-commit-hooks: disable-next-line
+# (26.12.00a62 -> 26.12.0a62) and mark pre-releases (26.12.0a62 -> 26.12.0-a62). maturin maps
+# the result back to the original PEP 440 version. Local runs keep the checked-in version.
+if [[ -n "${RAPIDS_PACKAGE_VERSION:-}" ]]; then
+  cargo_version=$(sed -E 's/(^|\.)0+([0-9])/\1\2/g; s/([0-9])(a|rc)([0-9])/\1-\2\3/' <<< "${RAPIDS_PACKAGE_VERSION}")
+  sed -i "s/^version = .*/version = \"${cargo_version}\"/" Cargo.toml
+fi
+# No --locked here: changing the version requires cargo to update the crate's own Cargo.lock entry.
+# 'cargo check --locked' above already verifies the lockfile.
+python -m maturin build --release
 
 shopt -s nullglob
 generated_wheels=(target/wheels/*.whl)
