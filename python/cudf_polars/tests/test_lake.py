@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 
+from cudf_polars.engine.options import StreamingOptions
 from cudf_polars.testing.asserts import (
     assert_gpu_result_equal,
     assert_ir_translation_raises,
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
 
     from pyiceberg.table import Table
     from pyiceberg.table.update.schema import UpdateSchema
+
+    from cudf_polars.engine.core import StreamingEngine
 
 pytest.importorskip("pyiceberg")
 deltalake = pytest.importorskip("deltalake")
@@ -928,12 +931,58 @@ def deleted_rows_scan(
         lambda q: q.sort("a"),
         lambda q: q.with_row_index("idx"),
         lambda q: q.select(pl.len()),
+        lambda q: q.filter(pl.col("a") > 2).sort("a"),
+        lambda q: q.filter(pl.col("a") > 2).head(3),
     ],
-    ids=["all", "row_index", "count"],
+    ids=["all", "row_index", "count", "filter", "filter_then_head"],
 )
 def test_scan_lake_deletions(
     engine: pl.GPUEngine, deleted_rows_scan: pl.LazyFrame, query: Any
 ) -> None:
+    assert_gpu_result_equal(query(deleted_rows_scan), engine=engine)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        lambda q: q.head(5),
+        lambda q: q.slice(2, 5),
+        lambda q: q.head(6).filter(pl.col("a") > 2),
+    ],
+    ids=["head", "slice", "head_then_filter"],
+)
+def test_scan_lake_deletions_sliced(
+    request: pytest.FixtureRequest,
+    engine: pl.GPUEngine,
+    deleted_rows_scan: pl.LazyFrame,
+    query: Any,
+) -> None:
+    if request.node.callspec.params["deleted_positions"] == "past_file_ends":
+        request.applymarker(
+            pytest.mark.xfail(
+                reason="The polars CPU engine counts deletion positions past the "
+                "end of a data file when it slices the scan",
+                strict=True,
+            )
+        )
+    assert_gpu_result_equal(query(deleted_rows_scan), engine=engine)
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        lambda q: q.sort("a"),
+        lambda q: q.select(pl.len()),
+        lambda q: q.filter(pl.col("a") > 2).sort("a"),
+    ],
+    ids=["all", "count", "filter"],
+)
+def test_scan_lake_deletions_partition_per_file(
+    streaming_engine_factory: Callable[[StreamingOptions], StreamingEngine],
+    deleted_rows_scan: pl.LazyFrame,
+    query: Any,
+) -> None:
+    engine = streaming_engine_factory(StreamingOptions(target_partition_size=1))
     assert_gpu_result_equal(query(deleted_rows_scan), engine=engine)
 
 
