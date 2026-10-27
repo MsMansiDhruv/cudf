@@ -1347,7 +1347,11 @@ class Scan(IR):
                 name: schema[name] for name in output_names if name not in hive_names
             }
             Scan._validate_cached_parquet_info(paths, cached_parquet_info)
-            # Cannot push predicate when later steps count rows before filtering.
+            # The predicate cannot filter the read when a later step needs the
+            # unfiltered rows. The row index numbers the rows before the
+            # predicate. Deletions are physical row positions within each data
+            # file. Polars applies the slice before the predicate, and the
+            # slice is taken after the files are concatenated.
             push_predicate = (
                 predicate is not None
                 and row_index is None
