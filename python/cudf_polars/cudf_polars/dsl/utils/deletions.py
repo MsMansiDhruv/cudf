@@ -62,11 +62,7 @@ def deletion_mask(
             )
         else:
             file_positions = plc.Column.from_arrow(
-                selection.fill_null(value=False)
-                .not_()
-                .arg_true()
-                .cast(pl.Int64)
-                .to_arrow(),
+                selection.fill_null(value=False).not_().arg_true().cast(pl.Int64),
                 stream=stream,
             )
         if file_positions is not None:
@@ -149,24 +145,24 @@ def _scan_positions(
 ) -> plc.Column:
     """Positions within the scan of the deleted rows that exist in one data file."""
     int64 = plc.DataType(plc.TypeId.INT64)
-    bool8 = plc.DataType(plc.TypeId.BOOL8)
-    in_file = plc.binaryop.binary_operation(
-        plc.binaryop.binary_operation(
-            file_positions,
-            plc.Scalar.from_py(0, int64, stream=stream),
-            plc.binaryop.BinaryOperator.GREATER_EQUAL,
-            bool8,
-            stream=stream,
+    position = plc.expressions.ColumnReference(0)
+    in_file = plc.transform.compute_column(
+        plc.Table([file_positions]),
+        plc.expressions.Operation(
+            plc.expressions.ASTOperator.LOGICAL_AND,
+            plc.expressions.Operation(
+                plc.expressions.ASTOperator.GREATER_EQUAL,
+                position,
+                plc.expressions.Literal(plc.Scalar.from_py(0, int64, stream=stream)),
+            ),
+            plc.expressions.Operation(
+                plc.expressions.ASTOperator.LESS,
+                position,
+                plc.expressions.Literal(
+                    plc.Scalar.from_py(num_rows, int64, stream=stream)
+                ),
+            ),
         ),
-        plc.binaryop.binary_operation(
-            file_positions,
-            plc.Scalar.from_py(num_rows, int64, stream=stream),
-            plc.binaryop.BinaryOperator.LESS,
-            bool8,
-            stream=stream,
-        ),
-        plc.binaryop.BinaryOperator.LOGICAL_AND,
-        bool8,
         stream=stream,
     )
     (kept,) = plc.stream_compaction.apply_retention_mask(
@@ -174,11 +170,13 @@ def _scan_positions(
     ).columns()
     if offset == 0:
         return kept
-    return plc.binaryop.binary_operation(
-        kept,
-        plc.Scalar.from_py(offset, int64, stream=stream),
-        plc.binaryop.BinaryOperator.ADD,
-        int64,
+    return plc.transform.compute_column(
+        plc.Table([kept]),
+        plc.expressions.Operation(
+            plc.expressions.ASTOperator.ADD,
+            position,
+            plc.expressions.Literal(plc.Scalar.from_py(offset, int64, stream=stream)),
+        ),
         stream=stream,
     )
 
