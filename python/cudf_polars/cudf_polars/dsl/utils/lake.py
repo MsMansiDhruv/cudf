@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     _Layout = tuple[_ElementLayout, ...]
     _FieldIds = tuple[int | None, tuple["_FieldIds", ...]]
 
-__all__ = ["IcebergColumn", "LakeScanOptions", "read_lake_files"]
+__all__ = ["IcebergColumn", "LakehouseScanOptions", "read_lake_files"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -115,7 +115,7 @@ class IcebergColumn:
 
 
 @dataclasses.dataclass(frozen=True)
-class LakeScanOptions:
+class LakehouseScanOptions:
     """
     The Iceberg and Delta Lake specific parts of a polars ``Scan``.
 
@@ -190,7 +190,7 @@ class LakeScanOptions:
     @classmethod
     def from_file_options(
         cls, file_options: Any, paths: Sequence[str]
-    ) -> LakeScanOptions | None:
+    ) -> LakehouseScanOptions | None:
         """
         Build from the ``file_options`` of a polars ``Scan`` node.
 
@@ -341,7 +341,7 @@ class LakeScanOptions:
             self.position_deletes or self.deletion_vectors or self.delta_selections
         )
 
-    def slice(self, start: int, stop: int) -> LakeScanOptions:
+    def slice(self, start: int, stop: int) -> LakehouseScanOptions:
         """
         Restrict to the paths in ``range(start, stop)``.
 
@@ -402,7 +402,7 @@ class LakeScanOptions:
     def __eq__(self, other: Any) -> bool:
         """Whether two sets of options agree."""
         return (
-            isinstance(other, LakeScanOptions)
+            isinstance(other, LakehouseScanOptions)
             and self.columns == other.columns
             and self.position_deletes == other.position_deletes
             and self.deletion_vectors == other.deletion_vectors
@@ -425,7 +425,7 @@ def _series_mapping_eq(
 
 def read_lake_files(
     paths: Sequence[str],
-    lake_options: LakeScanOptions,
+    lake_options: LakehouseScanOptions,
     schema: Schema,
     with_columns: Sequence[str] | None,
     cached_parquet_info: Sequence[CachedParquetInfo] | None = None,
@@ -975,7 +975,7 @@ def _read_group(
     rows_per_path: Sequence[int],
     wanted: Mapping[Any, str],
     schema: Schema,
-    lake_options: LakeScanOptions,
+    lake_options: LakehouseScanOptions,
     filters: plc.expressions.Expression | None,
     source_offset: int | None,
     *,

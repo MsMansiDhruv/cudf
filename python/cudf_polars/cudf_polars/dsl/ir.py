@@ -83,7 +83,7 @@ if TYPE_CHECKING:
 
     from cudf_polars.containers.dataframe import NamedColumn
     from cudf_polars.dsl.utils.io import CachedParquetInfo
-    from cudf_polars.dsl.utils.lake import LakeScanOptions
+    from cudf_polars.dsl.utils.lake import LakehouseScanOptions
     from cudf_polars.quent._context import (
         ActorBoundQuentIRExecutionState,
         UnboundQuentIRExecutionState,
@@ -736,7 +736,7 @@ class Scan(IR):
     """Hive partition values, one per path."""
     cached_parquet_info: list[CachedParquetInfo] | None
     """Cached parquet file metadata."""
-    lake_options: LakeScanOptions | None
+    lake_options: LakehouseScanOptions | None
     """Iceberg and Delta Lake specific options, if this is a lake scan."""
 
     PARQUET_DEFAULT_CHUNK_SIZE: int = 0  # unlimited
@@ -759,7 +759,7 @@ class Scan(IR):
         predicate: expr.NamedExpr | None,
         parquet_options: ParquetOptions,
         hive_parts: PerPathValues | None = None,
-        lake_options: LakeScanOptions | None = None,
+        lake_options: LakehouseScanOptions | None = None,
         cached_parquet_info: list[CachedParquetInfo] | None = None,
     ):
         self.schema = schema
@@ -911,7 +911,7 @@ class Scan(IR):
 
     @staticmethod
     def _lake_partition_values(
-        lake_options: LakeScanOptions,
+        lake_options: LakehouseScanOptions,
         schema: Schema,
         with_columns: list[str] | None,
     ) -> PerPathValues | None:
@@ -1004,7 +1004,7 @@ class Scan(IR):
             return None
         return self.hive_parts.slice(start, stop)
 
-    def slice_lake_options(self, start: int, stop: int) -> LakeScanOptions | None:
+    def slice_lake_options(self, start: int, stop: int) -> LakehouseScanOptions | None:
         """
         Iceberg and Delta options for ``self.paths[start:stop]``.
 
@@ -1205,7 +1205,7 @@ class Scan(IR):
         parquet_options: ParquetOptions,
         hive_parts: PerPathValues | None,
         cached_parquet_info: list[CachedParquetInfo] | None,
-        lake_options: LakeScanOptions | None,
+        lake_options: LakehouseScanOptions | None,
         *,
         context: IRExecutionContext,
     ) -> DataFrame:

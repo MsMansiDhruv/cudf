@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from rmm.pylibrmm.stream import Stream
 
-    from cudf_polars.dsl.utils.lake import LakeScanOptions
+    from cudf_polars.dsl.utils.lake import LakehouseScanOptions
 
 __all__ = ["apply_deletions", "deletion_mask"]
 
@@ -29,7 +29,7 @@ __all__ = ["apply_deletions", "deletion_mask"]
 def deletion_mask(
     paths: Sequence[str],
     rows_per_path: Sequence[int],
-    lake_options: LakeScanOptions,
+    lake_options: LakehouseScanOptions,
     *,
     stream: Stream,
 ) -> Column:
@@ -110,7 +110,7 @@ def apply_deletions(
     df: DataFrame,
     paths: Sequence[str],
     rows_per_path: Sequence[int],
-    lake_options: LakeScanOptions,
+    lake_options: LakehouseScanOptions,
     *,
     stream: Stream,
 ) -> DataFrame:
@@ -186,7 +186,7 @@ def _scan_positions(
 def _iceberg_positions(
     index: int,
     path: str,
-    lake_options: LakeScanOptions,
+    lake_options: LakehouseScanOptions,
     puffin_cache: dict[str, dict[str, pa.ChunkedArray]],
     *,
     stream: Stream,

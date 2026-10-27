@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
     from cudf_polars.containers import DataType
     from cudf_polars.dsl.ir import CachedParquetInfo, IRExecutionContext
-    from cudf_polars.dsl.utils.lake import LakeScanOptions
+    from cudf_polars.dsl.utils.lake import LakehouseScanOptions
     from cudf_polars.dsl.utils.per_path import PerPathValues
     from cudf_polars.streaming.base import (
         DataSourceInfo,
@@ -259,7 +259,7 @@ def hybrid_scan_eligible(
     row_index: tuple[str, int] | None,
     include_file_paths: str | None,
     predicate: NamedExpr | None,
-    lake_options: LakeScanOptions | None = None,
+    lake_options: LakehouseScanOptions | None = None,
 ) -> bool:
     """Whether scan options allow hybrid scan if metadata is available."""
     return (
@@ -525,7 +525,7 @@ class ParquetScanTask(ScanTask):
     """Parquet-specific options."""
     hive_parts: PerPathValues | None
     """Hive partition values for this task's paths."""
-    lake_options: LakeScanOptions | None
+    lake_options: LakehouseScanOptions | None
     """Iceberg and Delta Lake options for this task's paths."""
 
     def __init__(
@@ -536,7 +536,7 @@ class ParquetScanTask(ScanTask):
         total_splits: int,
         parquet_options: ParquetOptions,
         hive_parts: PerPathValues | None = None,
-        lake_options: LakeScanOptions | None = None,
+        lake_options: LakehouseScanOptions | None = None,
     ):
         if base_scan.typ != "parquet":
             raise ValueError(f"Expected a parquet scan, got: {base_scan.typ}")
@@ -701,7 +701,7 @@ class ParquetScanTask(ScanTask):
         total_splits: int,
         parquet_options: ParquetOptions,
         hive_parts: PerPathValues | None,
-        lake_options: LakeScanOptions | None,
+        lake_options: LakehouseScanOptions | None,
         *,
         context: IRExecutionContext,
     ) -> DataFrame:

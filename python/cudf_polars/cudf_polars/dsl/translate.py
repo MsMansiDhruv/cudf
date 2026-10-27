@@ -29,7 +29,7 @@ from cudf_polars.dsl.to_ast import insert_colrefs
 from cudf_polars.dsl.traversal import traversal
 from cudf_polars.dsl.utils.aggregations import decompose_single_agg
 from cudf_polars.dsl.utils.groupby import rewrite_groupby
-from cudf_polars.dsl.utils.lake import LakeScanOptions
+from cudf_polars.dsl.utils.lake import LakehouseScanOptions
 from cudf_polars.dsl.utils.naming import unique_names
 from cudf_polars.dsl.utils.per_path import PerPathValues
 from cudf_polars.dsl.utils.replace import replace
@@ -634,7 +634,7 @@ def _(node: plrs._ir_nodes.Scan, translator: Translator, schema: Schema) -> ir.I
         if node.hive_parts is None
         else PerPathValues.from_polars(pl.DataFrame._from_pydf(node.hive_parts))
     )
-    lake_options = LakeScanOptions.from_file_options(file_options, node.paths)
+    lake_options = LakehouseScanOptions.from_file_options(file_options, node.paths)
     if lake_options is not None:
         lake_options.check_field_ids(paths)
     config_options = translator.config_options
