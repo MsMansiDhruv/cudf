@@ -135,21 +135,26 @@ class LakehouseScanOptions:
         that applies to it, as a boolean series that is true for the rows
         to keep.
     partition_values
-        Maps a physical field ID to the value its identity-transformed
+        Maps a physical field ID to the value its Iceberg identity-transformed
         partition field takes, one row per path.
     partition_errors
         Maps a physical field ID to the reason polars could not supply the
-        values of its identity-transformed partition field. Such a field is
-        read from the files, and a file that lacks it fails the scan.
+        values of its Iceberg identity-transformed partition field. Such a
+        field is read from the files, and a file that lacks it fails the scan.
     initial_defaults
         Maps a physical field ID to the single-element series holding the
         Iceberg V3 initial default for a column absent from a file.
     row_count
-        ``(total_rows, deleted_rows)`` for the whole scan when the table
-        metadata could supply it.
+        ``(total_rows, deleted_rows)`` for the whole scan when the Iceberg
+        table metadata could supply it.
 
     Notes
     -----
+    ``scan_delta`` only supplies ``delta_selections``. Every other field
+    comes from ``scan_iceberg``. A Delta scan gets its partition values from
+    the hive partitions of the scan instead.
+
+
     A file may lack columns of the schema, which are filled with their
     initial default or with nulls, and may hold columns or struct fields
     the schema does not, which are ignored. Iceberg and Delta scans always
