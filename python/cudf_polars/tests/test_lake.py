@@ -960,8 +960,7 @@ def test_scan_lake_deletions_sliced(
     if request.node.callspec.params["deleted_positions"] == "past_file_ends":
         request.applymarker(
             pytest.mark.xfail(
-                reason="The polars CPU engine counts deletion positions past the "
-                "end of a data file when it slices the scan",
+                reason="https://github.com/pola-rs/polars/issues/30407",
                 strict=True,
             )
         )
