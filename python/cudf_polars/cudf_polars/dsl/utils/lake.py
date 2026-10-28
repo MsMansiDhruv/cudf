@@ -123,8 +123,7 @@ class LakehouseScanOptions:
     ----------
     columns
         Top-level columns of the Iceberg schema, in table order, or ``None``
-        when the scan reads columns by name (Delta, and Iceberg tables that
-        never evolved).
+        for a Delta scan, which reads columns by name.
     position_deletes
         Maps the index of a path in the scan to the Iceberg position delete
         files that apply to it.
