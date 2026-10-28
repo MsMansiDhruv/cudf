@@ -798,10 +798,6 @@ class Scan(IR):
         Scan._validate_cached_parquet_info(self.paths, self.cached_parquet_info)
         Scan._validate_hive_parts_info(self.paths, self.hive_parts)
         if (
-            self.lake_options is not None and self.typ != "parquet"
-        ):  # pragma: no cover; polars only builds parquet lake scans
-            raise NotImplementedError(f"Iceberg or Delta scan of {self.typ} files")
-        if (
             self.lake_options is not None and include_file_paths is not None
         ):  # pragma: no cover; polars lake scans never include file paths
             raise NotImplementedError(
