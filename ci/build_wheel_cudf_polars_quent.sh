@@ -10,7 +10,14 @@ cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")"/../
 # shellcheck source=ci/build_wheel_common.sh
 source ./ci/build_wheel_common.sh
 
+export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97}"
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+
+rapids-retry rustup toolchain install \
+  "${RUSTUP_TOOLCHAIN}" \
+  --profile minimal \
+  --component rustfmt \
+  --component clippy
 
 export RAPIDS_PACKAGE_VERSION
 RAPIDS_PACKAGE_VERSION=$(<VERSION)
