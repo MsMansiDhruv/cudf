@@ -78,7 +78,16 @@ std::vector<packed_table> contiguous_split(
   rmm::device_async_resource_ref mr = cudf::get_current_device_resource_ref());
 
 /**
+ * @brief Splits a table using a vector of split points.
+ *
  * @deprecated in 26.12 and will be removed in a future release. Use the std::span overload instead.
+ *
+ * @param input View of a table to split
+ * @param splits Vector of indices where the view will be split
+ * @param stream CUDA stream used for device memory operations and kernel launches
+ * @param mr Memory resource to allocate all returned device memory
+ * @return The set of requested views of `input` indicated by the `splits` and the viewed memory
+ * buffer
  */
 [[deprecated("Use the std::span overload instead.")]]
 std::vector<packed_table> contiguous_split(
