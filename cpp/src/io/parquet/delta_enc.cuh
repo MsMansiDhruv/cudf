@@ -53,17 +53,20 @@ static_assert(values_per_mini_block % 32 == 0);
 
 __device__ constexpr int rolling_idx(int index) { return rolling_index<buffer_size>(index); }
 
+// Largest scratch type of the bit packer (not uint64_t because of atomicOr's typing)
+using max_scratch_type = unsigned long long;
+
 // Version of bit packer that can handle up to 64 bits values.
-// T is the type to use for processing. if nbits <= 32 use uint32_t, otherwise unsigned long long
-// (not uint64_t because of atomicOr's typing). allowing this to be selectable since there's a
-// measurable impact to using the wider types. temp_space must hold warp_size unsigned long long
-// words for each warp of the block, whichever type the warp uses.
+// T is the type to use for processing. if nbits <= 32 use uint32_t, otherwise max_scratch_type.
+// allowing this to be selectable since there's a measurable impact to using the wider types.
+// temp_space must hold warp_size max_scratch_type words for each warp of the block, whichever
+// type the warp uses.
 template <typename scratch_type>
 inline __device__ void bitpack_mini_block(
   uint8_t* dst, uleb128_t val, uint32_t count, uint8_t nbits, void* temp_space)
 {
   using wide_type = cuda::std::
-    conditional_t<cuda::std::is_same_v<scratch_type, unsigned long long>, __uint128_t, uint64_t>;
+    conditional_t<cuda::std::is_same_v<scratch_type, max_scratch_type>, __uint128_t, uint64_t>;
   using cudf::detail::warp_size;
   scratch_type constexpr mask = sizeof(scratch_type) * 8 - 1;
   auto constexpr div          = sizeof(scratch_type) * 8;
@@ -72,9 +75,9 @@ inline __device__ void bitpack_mini_block(
   auto const warp_id = threadIdx.x / warp_size;
 
   // The warps of a block can pack their mini-blocks with different scratch types, so each warp
-  // gets a region of `warp_size` 64-bit words. Regions sized by `scratch_type` would overlap.
+  // gets a region sized for max_scratch_type. Regions sized by `scratch_type` would overlap.
   auto const scratch = reinterpret_cast<scratch_type*>(
-    static_cast<unsigned long long*>(temp_space) + warp_id * warp_size);
+    static_cast<max_scratch_type*>(temp_space) + warp_id * warp_size);
 
   // zero out scratch
   scratch[lane_id] = 0;
@@ -275,7 +278,7 @@ class delta_binary_packer {
     if (warp_idx < _num_values) {
       auto const num_enc = min(delta::values_per_mini_block, _num_values - warp_idx);
       if (_mb_bits[warp_id] > 32) {
-        delta::bitpack_mini_block<unsigned long long>(
+        delta::bitpack_mini_block<delta::max_scratch_type>(
           mb_ptr, norm_delta, num_enc, _mb_bits[warp_id], _bitpack_tmp);
       } else {
         delta::bitpack_mini_block<uint32_t>(
