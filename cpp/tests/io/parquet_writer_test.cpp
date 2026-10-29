@@ -1840,9 +1840,8 @@ TEST_P(ParquetCompressionTest, V2AllNullPages)
   auto const compression_type = std::get<1>(GetParam());
   SKIP_IF_NVCOMP_GZIP_UNSUPPORTED();
 
-  // V2 pages do not compress their levels, so an all-null page of a PLAIN column (DOUBLE here)
-  // compresses 0 bytes. The max compressed size of that need not be a multiple of the compressor's
-  // output alignment. Both a page in the same chunk and the next chunk follow such a page here.
+  // One-row V2 pages, so that pages with no data to compress are followed by pages of the same
+  // column chunk and of the next one
   column_wrapper<double> all_nulls_col({1., 2.}, cudf::test::iterators::all_nulls());
   column_wrapper<double> first_null_col({1., 2.}, cudf::test::iterators::null_at(0));
   table_view expected({all_nulls_col, first_null_col});
