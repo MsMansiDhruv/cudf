@@ -25,6 +25,7 @@
 #include <cudf/types.hpp>
 
 #include <cuda/iterator>
+#include <cuda/std/type_traits>
 
 #include <array>
 #include <cstring>
@@ -1139,7 +1140,8 @@ namespace {
 template <typename IndexType>
 std::unique_ptr<cudf::column> dictionary_from_arrow_host(std::vector<int64_t> const& keys,
                                                          std::vector<IndexType> const& indices,
-                                                         std::vector<uint8_t> const& validity)
+                                                         std::vector<uint8_t> const& validity,
+                                                         int64_t offset = 0)
 {
   nanoarrow::UniqueSchema schema;
   NANOARROW_THROW_NOT_OK(
@@ -1150,6 +1152,7 @@ std::unique_ptr<cudf::column> dictionary_from_arrow_host(std::vector<int64_t> co
   auto array = get_nanoarrow_dict_array<int64_t, IndexType>(keys, indices, validity);
   NANOARROW_THROW_NOT_OK(
     ArrowArrayFinishBuilding(array.get(), NANOARROW_VALIDATION_LEVEL_NONE, nullptr));
+  slice_host_nanoarrow(array.get(), offset, static_cast<int64_t>(indices.size()));
 
   ArrowDeviceArray input;
   memcpy(&input.array, array.get(), sizeof(ArrowArray));
@@ -1187,7 +1190,7 @@ TYPED_TEST_SUITE(FromArrowHostDictionaryUnsignedIndicesTest, UnsignedIndexTypes)
 TYPED_TEST(FromArrowHostDictionaryUnsignedIndicesTest, SameWidthWhenKeysFit)
 {
   using IndexType  = TypeParam;
-  using SignedType = std::make_signed_t<IndexType>;
+  using SignedType = cuda::std::make_signed_t<IndexType>;
   std::vector<int64_t> keys{10, 20, 30, 40};
   std::vector<uint8_t> validity{1, 0, 1, 1, 1};
 
@@ -1204,7 +1207,7 @@ TYPED_TEST(FromArrowHostDictionaryUnsignedIndicesTest, SameWidthWhenKeysFit)
 TYPED_TEST(FromArrowHostDictionaryUnsignedIndicesTest, AllNullWithNoKeysKeepsRows)
 {
   using IndexType  = TypeParam;
-  using SignedType = std::make_signed_t<IndexType>;
+  using SignedType = cuda::std::make_signed_t<IndexType>;
   std::vector<uint8_t> validity{0, 0, 0};
 
   auto got = dictionary_from_arrow_host<IndexType>({}, std::vector<IndexType>{0, 0, 0}, validity);
@@ -1224,7 +1227,7 @@ TYPED_TEST_SUITE(FromArrowHostDictionaryNarrowIndicesTest, NarrowUnsignedIndexTy
 TYPED_TEST(FromArrowHostDictionaryNarrowIndicesTest, ReinterpretAtSignedLimit)
 {
   using IndexType          = TypeParam;
-  using SignedType         = std::make_signed_t<IndexType>;
+  using SignedType         = cuda::std::make_signed_t<IndexType>;
   auto constexpr max_index = std::numeric_limits<SignedType>::max();
   auto const keys          = sequential_keys(int64_t{max_index} + 1);
   std::vector<uint8_t> validity{1, 0, 1};
@@ -1244,7 +1247,7 @@ TYPED_TEST(FromArrowHostDictionaryNarrowIndicesTest, WidenAboveSignedLimit)
   using IndexType = TypeParam;
   using WiderType = std::conditional_t<std::is_same_v<IndexType, uint8_t>, int16_t, int32_t>;
   auto constexpr max_index =
-    static_cast<WiderType>(std::numeric_limits<std::make_signed_t<IndexType>>::max() + 1);
+    static_cast<WiderType>(std::numeric_limits<cuda::std::make_signed_t<IndexType>>::max() + 1);
   auto const keys = sequential_keys(int64_t{max_index} + 1);
   std::vector<uint8_t> validity{1, 0, 1};
 
@@ -1256,4 +1259,11 @@ TYPED_TEST(FromArrowHostDictionaryNarrowIndicesTest, WidenAboveSignedLimit)
   EXPECT_EQ(cudf::dictionary_column_view(got->view()).indices().type(),
             cudf::data_type{cudf::type_to_id<WiderType>()});
   CUDF_TEST_EXPECT_COLUMNS_EQUAL(expected->view(), got->view());
+
+  auto got_sliced = dictionary_from_arrow_host<IndexType>(
+    keys, std::vector<IndexType>{static_cast<IndexType>(max_index), 0, 1}, validity, 1);
+  auto expected_sliced = cudf::slice(expected->view(), {1, 3}).front();
+  EXPECT_EQ(cudf::dictionary_column_view(got_sliced->view()).indices().type(),
+            cudf::data_type{cudf::type_to_id<WiderType>()});
+  CUDF_TEST_EXPECT_COLUMNS_EQUAL(expected_sliced, got_sliced->view());
 }
