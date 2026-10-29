@@ -13,11 +13,8 @@ source ./ci/build_wheel_common.sh
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97}"
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
-rapids-retry rustup-init \
-  -y \
-  --no-modify-path \
+rapids-retry rustup toolchain install "${RUSTUP_TOOLCHAIN}" \
   --profile minimal \
-  --default-toolchain "${RUSTUP_TOOLCHAIN}" \
   --component rustfmt \
   --component clippy
 
