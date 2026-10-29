@@ -39,7 +39,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pylibcudf as plc
-from cudf_streaming.channel_metadata import ChannelMetadata, Partitioning
+from cudf_streaming.channel_metadata import (
+    ChannelMetadata,
+    Partitioning,
+    RowOrdering,
+    RowOrderingScope,
+)
 from cudf_streaming.partition_utils import (
     unpack_and_concat_cost as py_unpack_and_concat_cost,
 )
@@ -57,7 +62,6 @@ from cudf_polars.dsl.utils.naming import names_to_indices
 from cudf_polars.streaming.actor_graph.collectives.shuffle import ShuffleManager
 from cudf_polars.streaming.actor_graph.collectives.sort_utils import (
     append_row_sequence_column,
-    build_order_scheme,
     build_post_sort_ir,
     compute_sort_boundaries,
     insert_chunk_with_sort_splits,
@@ -790,9 +794,12 @@ async def global_sort_external(
         context,
         ChannelMetadata(
             local_count=max(1, num_partitions // comm.nranks),
+            # Only claim row ordering: the emitted chunks are not guaranteed
+            # to line up with ``sort_boundaries_df``, so no boundaries promise.
             partitioning=Partitioning(
-                build_order_scheme(context, sort_to_order_keys(ir), sort_boundaries_df),
-                "inherit",
+                row_orderings=(
+                    RowOrdering(sort_to_order_keys(ir), RowOrderingScope.GLOBAL),
+                ),
             ),
         ),
     )

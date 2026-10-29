@@ -5,11 +5,20 @@
 from __future__ import annotations
 
 import math
+from functools import partial
 from typing import TYPE_CHECKING
 
 import pylibcudf as plc
-from cudf_streaming.channel_metadata import ChannelMetadata, Partitioning
-from cudf_streaming.table_chunk import TableChunk
+from cudf_streaming.channel_metadata import (
+    ChannelMetadata,
+    Partitioning,
+    RowOrdering,
+    RowOrderingScope,
+)
+from cudf_streaming.table_chunk import (
+    TableChunk,
+    make_table_chunks_available_or_wait,
+)
 from rapidsmpf.shuffler import PartitionAssignment
 from rapidsmpf.streaming.core.actor import define_actor
 from rapidsmpf.streaming.core.message import Message
@@ -40,11 +49,15 @@ from cudf_polars.streaming.actor_graph.nodes import (
     default_node_single,
     shutdown_on_error,
 )
+from cudf_polars.streaming.actor_graph.partitioning import (
+    NormalizedPartitioning,
+    maybe_remap_partitioning,
+    replace_row_orderings,
+)
 from cudf_polars.streaming.actor_graph.tracing import send_chunk
 from cudf_polars.streaming.actor_graph.utils import (
     ChannelManager,
     ChunkStore,
-    NormalizedPartitioning,
     _sample_chunks,
     allgather_reduce,
     chunk_to_frame,
@@ -92,7 +105,15 @@ async def _simple_top_or_bottom_k(
     await send_metadata(
         ch_out,
         context,
-        ChannelMetadata(local_count=1, partitioning=None, duplicated=True),
+        ChannelMetadata(
+            local_count=1,
+            partitioning=Partitioning(
+                row_orderings=(
+                    RowOrdering(sort_to_order_keys(ir), RowOrderingScope.GLOBAL),
+                )
+            ),
+            duplicated=True,
+        ),
     )
 
     chunks: list[TableChunk] = []
@@ -338,6 +359,29 @@ def _can_sort_chunkwise(
     )
 
 
+def _sort_partitioning(
+    ir: Sort,
+    child_metadatas: Sequence[ChannelMetadata],
+    context: Context,
+) -> Partitioning:
+    """Preserve partition layout and replace row-order metadata after a sort."""
+    partitioning = (
+        maybe_remap_partitioning(
+            ir,
+            child_metadatas[0].partitioning,
+            context=context,
+            preserves_row_order=False,
+        )
+        or Partitioning()
+    )
+    if not all(isinstance(ne.value, Col) for ne in ir.by):
+        return partitioning
+    return replace_row_orderings(
+        partitioning,
+        (RowOrdering(sort_to_order_keys(ir), RowOrderingScope.GLOBAL),),
+    )
+
+
 async def _global_sort(
     context: Context,
     comm: Communicator,
@@ -354,11 +398,13 @@ async def _global_sort(
     tracer: ActorTracer | None,
 ) -> None:
     """Global sort."""
+    order_keys = sort_to_order_keys(ir)
     output_metadata = ChannelMetadata(
         local_count=max(1, num_partitions // comm.nranks),
         partitioning=Partitioning(
-            build_order_scheme(context, sort_to_order_keys(ir), sort_boundaries_df),
+            build_order_scheme(context, order_keys, sort_boundaries_df),
             "inherit",
+            row_orderings=(RowOrdering(order_keys, RowOrderingScope.GLOBAL),),
         ),
     )
     await send_metadata(ch_out, context, output_metadata)
@@ -442,13 +488,21 @@ async def sort_actor(
         if _can_sort_chunkwise(ordering, order_keys):
             if tracer is not None:
                 tracer.decision = "already_sorted"
+            metadata_out = ChannelMetadata(
+                local_count=metadata_in.local_count,
+                partitioning=replace_row_orderings(
+                    metadata_in.partitioning or Partitioning(),
+                    (RowOrdering(order_keys, RowOrderingScope.GLOBAL),),
+                ),
+                duplicated=metadata_in.duplicated,
+            )
             await chunkwise_evaluate(
                 context,
                 ir,
                 ir_context,
                 ch_out,
                 ch_in,
-                metadata_in,
+                metadata_out,
                 tracer=tracer,
             )
             return
@@ -529,7 +583,7 @@ async def sort_actor(
 
 @generate_ir_sub_network.register(Sort)
 def _sort_rapidsmpf_network(ir: Sort, rec: SubNetGenerator) -> tuple[dict, dict]:
-    """Wire multi-partition ``Sort`` to ``sort_actor``; single-partition uses ``default_node_single``."""
+    """Use ``sort_actor`` for multi-partition sorts and the default actor otherwise."""
     executor = rec.state["config_options"].executor
     partition_info = rec.state["partition_info"]
     dynamic = executor.dynamic_planning is not None
@@ -547,6 +601,7 @@ def _sort_rapidsmpf_network(ir: Sort, rec: SubNetGenerator) -> tuple[dict, dict]
                 ir_context,
                 channels[ir].reserve_input_slot(),
                 channels[ir.children[0]].reserve_output_slot(),
+                partitioning_callback=partial(_sort_partitioning, ir),
             )
         ]
         return nodes, channels
