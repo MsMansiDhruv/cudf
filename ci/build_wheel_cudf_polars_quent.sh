@@ -12,6 +12,9 @@ source ./ci/build_wheel_common.sh
 
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-1.97}"
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+# sccache-dist drops directories that are only traversed via `..` in `#[path]`
+# attributes (e.g. libc's glibc sysdeps), so remote rustc can't find the file.
+export SCCACHE_NO_DIST_COMPILE=1
 
 rapids-retry rustup toolchain install "${RUSTUP_TOOLCHAIN}" \
   --profile minimal \
