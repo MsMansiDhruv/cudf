@@ -64,7 +64,7 @@ class _ObjectWithArrowMetadata:
     def __init__(
         self,
         obj: plc.Table | plc.Column,
-        metadata: list[plc.interop.ColumnMetadata],
+        metadata: list[plc.interop.ColumnMetadata] | plc.interop.ColumnMetadata,
         stream: Stream,
     ) -> None:
         self.obj = obj
@@ -174,25 +174,19 @@ class DataFrame:
         categorical_columns = [c for c in self.columns if c.dtype.is_categorical]
         if categorical_columns:
             df = df.with_columns(
-                pl.DataFrame(
+                pl.Series(
                     _ObjectWithArrowMetadata(
-                        plc.Table(
-                            [
-                                c.obj.children()[1]
-                                if c.obj.num_children() == 2
-                                else plc.column_factories.make_empty_column(
-                                    plc.DataType(plc.TypeId.STRING), stream=self.stream
-                                )
-                            ]
+                        c.obj.children()[1]
+                        if c.obj.num_children() == 2
+                        else plc.column_factories.make_empty_column(
+                            plc.DataType(plc.TypeId.STRING), stream=self.stream
                         ),
-                        [plc.interop.ColumnMetadata(name="keys")],
+                        plc.interop.ColumnMetadata(name=c.name),
                         self.stream,
                     )
                 )
-                .to_series()
                 .cast(c.dtype.polars_type, strict=True)
                 .gather(df[c.name])
-                .alias(c.name)
                 for c in categorical_columns
             )
         return df.with_columns(
