@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from decimal import Decimal
@@ -17,6 +18,7 @@ from cudf_polars.testing.asserts import (
     assert_ir_translation_raises,
 )
 from cudf_polars.testing.engine_utils import is_streaming_engine
+from cudf_polars.utils.versions import POLARS_VERSION_LT_21
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
 
 pytest.importorskip("pyiceberg")
 deltalake = pytest.importorskip("deltalake")
+import pyarrow as pa  # noqa: E402
 import pyiceberg.schema  # noqa: E402
 from pyiceberg.catalog.sql import SqlCatalog  # noqa: E402
 from pyiceberg.partitioning import PartitionField, PartitionSpec  # noqa: E402
@@ -45,6 +48,7 @@ from pyiceberg.types import (  # noqa: E402
     NestedField,
     StringType,
     StructType,
+    TimestampType,
 )
 
 
@@ -777,6 +781,32 @@ def test_scan_iceberg_initial_defaults(
         _default_values=("iceberg", ({}, {2: pl.Series([7], dtype=pl.Int64)})),
     )
     assert_gpu_result_equal(query(q), engine=engine, check_row_order=False)
+
+
+@pytest.mark.skipif(
+    POLARS_VERSION_LT_21,
+    reason="Polars 2.0 does not upcast millisecond timestamps in Iceberg scans",
+)
+def test_scan_iceberg_millisecond_timestamps(
+    engine: pl.GPUEngine, iceberg_catalog: SqlCatalog, tmp_path: Path
+) -> None:
+    tbl = iceberg_catalog.create_table(
+        "ns.timestamps",
+        schema=pyiceberg.schema.Schema(
+            NestedField(1, "t", TimestampType(), required=False)
+        ),
+    )
+    path = str(tmp_path / "milliseconds.parquet")
+    pl.DataFrame(
+        {"t": [datetime.datetime(2026, 1, 1, 0, 0, 0, 123000), None]},
+        schema={"t": pl.Datetime("ms")},
+    ).write_parquet(
+        path,
+        arrow_schema=pa.schema(
+            [pa.field("t", pa.timestamp("ms"), metadata={"PARQUET:field_id": "1"})]
+        ),
+    )
+    assert_gpu_result_equal(_scan_iceberg_files(tbl, [path]), engine=engine)
 
 
 def test_scan_iceberg_nested_initial_default_unsupported(

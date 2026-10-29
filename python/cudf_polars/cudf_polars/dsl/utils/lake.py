@@ -59,22 +59,26 @@ class IcebergColumn:
     physical_id: int
     kind: str
     children: tuple[IcebergColumn, ...]
-    _LAKE_CAST_POLICY: ClassVar[Mapping[str, bool | str]] = MappingProxyType(
-        {
-            "integer_upcast": True,
-            "integer_to_float_cast": False,
-            "float_upcast": True,
-            "float_downcast": True,
-            "datetime_nanoseconds_downcast": True,
-            "datetime_microseconds_downcast": False,
-            "datetime_milliseconds_upcast": False,
-            "datetime_microseconds_upcast": False,
-            "datetime_convert_timezone": True,
-            "null_upcast": True,
-            "categorical_to_string": True,
-            "missing_struct_fields": "insert",
-            "extra_struct_fields": "ignore",
-        }
+    # Polars 2.1 also upcasts millisecond timestamps to microseconds
+    _LAKE_CAST_POLICIES: ClassVar[tuple[Mapping[str, bool | str], ...]] = tuple(
+        MappingProxyType(
+            {
+                "integer_upcast": True,
+                "integer_to_float_cast": False,
+                "float_upcast": True,
+                "float_downcast": True,
+                "datetime_nanoseconds_downcast": True,
+                "datetime_microseconds_downcast": False,
+                "datetime_milliseconds_upcast": milliseconds_upcast,
+                "datetime_microseconds_upcast": False,
+                "datetime_convert_timezone": True,
+                "null_upcast": True,
+                "categorical_to_string": True,
+                "missing_struct_fields": "insert",
+                "extra_struct_fields": "ignore",
+            }
+        )
+        for milliseconds_upcast in (False, True)
     )
 
     @classmethod
@@ -239,7 +243,7 @@ class LakehouseScanOptions:
         if (
             file_options.missing_columns_policy != "insert"
             or file_options.extra_columns_policy != "ignore"
-            or file_options.cast_columns_policy != IcebergColumn._LAKE_CAST_POLICY
+            or file_options.cast_columns_policy not in IcebergColumn._LAKE_CAST_POLICIES
         ):
             raise NotImplementedError(
                 "Inserting missing columns is only supported for Iceberg and Delta scans"
