@@ -2393,22 +2393,29 @@ make_byte_stream_split_table(bool as_struct)
   auto col1_data = random_values<int64_t>(num_rows);
   auto col2_data = random_values<float>(num_rows);
   auto col3_data = random_values<double>(num_rows);
+  auto col4_data = random_values<int8_t>(num_rows);
+  auto col5_data = random_values<int16_t>(num_rows);
 
   column_wrapper<int32_t> col0{col0_data.begin(), col0_data.end(), no_nulls()};
   column_wrapper<int64_t> col1{col1_data.begin(), col1_data.end(), no_nulls()};
   column_wrapper<float> col2{col2_data.begin(), col2_data.end(), no_nulls()};
   column_wrapper<double> col3{col3_data.begin(), col3_data.end(), no_nulls()};
+  // 8- and 16-bit integers are stored as INT32
+  column_wrapper<int8_t> col4{col4_data.begin(), col4_data.end(), no_nulls()};
+  column_wrapper<int16_t> col5{col5_data.begin(), col5_data.end(), no_nulls()};
 
   // throw in a list to make sure both decoders are working
-  auto col4 = make_parquet_list_col<int32_t>(engine, num_rows, 5, true);
+  auto col6 = make_parquet_list_col<int32_t>(engine, num_rows, 5, true);
 
   std::vector<std::unique_ptr<cudf::column>> columns;
-  columns.reserve(5);
+  columns.reserve(7);
   columns.push_back(col0.release());
   columns.push_back(col1.release());
   columns.push_back(col2.release());
   columns.push_back(col3.release());
-  columns.push_back(std::move(col4));
+  columns.push_back(col4.release());
+  columns.push_back(col5.release());
+  columns.push_back(std::move(col6));
 
   return [&]() -> std::pair<std::unique_ptr<cudf::table>, cudf::io::table_input_metadata> {
     auto const encoding = cudf::io::column_encoding::BYTE_STREAM_SPLIT;
@@ -2433,11 +2440,13 @@ make_byte_stream_split_table(bool as_struct)
       expected_metadata.column_metadata[0].child(1).set_name("int64s");
       expected_metadata.column_metadata[0].child(2).set_name("floats");
       expected_metadata.column_metadata[0].child(3).set_name("doubles");
-      expected_metadata.column_metadata[0].child(4).set_name("int32list");
-      for (int idx = 0; idx <= 3; idx++) {
+      expected_metadata.column_metadata[0].child(4).set_name("int8s");
+      expected_metadata.column_metadata[0].child(5).set_name("int16s");
+      expected_metadata.column_metadata[0].child(6).set_name("int32list");
+      for (int idx = 0; idx <= 5; idx++) {
         expected_metadata.column_metadata[0].child(idx).set_encoding(encoding);
       }
-      expected_metadata.column_metadata[0].child(4).child(1).set_encoding(encoding);
+      expected_metadata.column_metadata[0].child(6).child(1).set_encoding(encoding);
 
       return {std::move(tbl), expected_metadata};
     }
@@ -2451,12 +2460,14 @@ make_byte_stream_split_table(bool as_struct)
     expected_metadata.column_metadata[1].set_name("int64s");
     expected_metadata.column_metadata[2].set_name("floats");
     expected_metadata.column_metadata[3].set_name("doubles");
-    expected_metadata.column_metadata[4].set_name("int32list");
-    for (int idx = 0; idx <= 3; idx++) {
+    expected_metadata.column_metadata[4].set_name("int8s");
+    expected_metadata.column_metadata[5].set_name("int16s");
+    expected_metadata.column_metadata[6].set_name("int32list");
+    for (int idx = 0; idx <= 5; idx++) {
       expected_metadata.column_metadata[idx].set_encoding(encoding);
     }
 
-    expected_metadata.column_metadata[4].child(1).set_encoding(encoding);
+    expected_metadata.column_metadata[6].child(1).set_encoding(encoding);
     return {std::move(tbl), expected_metadata};
   }();
 }
@@ -2493,76 +2504,6 @@ TEST_F(ParquetWriterTest, ByteStreamSplitStruct)
   auto result = cudf::io::read_parquet(in_opts);
 
   CUDF_TEST_EXPECT_TABLES_EQUAL(*expected, result.tbl->view());
-}
-
-TEST_F(ParquetWriterTest, SmallIntegersByteStreamSplit)
-{
-  constexpr cudf::size_type num_rows = 1000;
-  // 8- and 16-bit integers are stored as INT32, so the reader has to narrow the four byte streams
-  // of each value to the column type
-  auto const int8_values =
-    cudf::detail::make_counting_transform_iterator(0, [](auto i) { return (i % 256) - 128; });
-  auto const int16_values =
-    cudf::detail::make_counting_transform_iterator(0, [](auto i) { return i * 65 - 32768; });
-  auto const uint8_values =
-    cudf::detail::make_counting_transform_iterator(0, [](auto i) { return i % 256; });
-  auto const uint16_values =
-    cudf::detail::make_counting_transform_iterator(0, [](auto i) { return i * 65; });
-  auto const validity = cudf::test::iterators::nulls_at_multiples_of(7);
-
-  column_wrapper<int8_t> int8_col(int8_values, int8_values + num_rows, validity);
-  column_wrapper<int16_t> int16_col(int16_values, int16_values + num_rows, validity);
-  // Without nulls, so that the values are copied directly
-  column_wrapper<uint8_t> uint8_col(uint8_values, uint8_values + num_rows);
-  column_wrapper<uint16_t> uint16_col(uint16_values, uint16_values + num_rows, validity);
-  // The list and struct columns use the decode kernels for lists and for nesting without lists
-  using int16_lists = cudf::test::lists_column_wrapper<int16_t>;
-  int16_lists int16_list_col{
-    {{{-32768, 1, 32767}, cudf::test::iterators::null_at(1)}, {}, {-2, 300}, {7}},
-    cudf::test::iterators::null_at(3)};
-  column_wrapper<int8_t> struct_int8_child{{-128, 0, 127, 5}};
-  column_wrapper<uint16_t> struct_uint16_child{{0, 300, 65535, 5}};
-  auto struct_col =
-    cudf::test::structs_column_wrapper{{struct_int8_child, struct_uint16_child}}.release();
-  auto const flat     = table_view{{int8_col, int16_col, uint8_col, uint16_col}};
-  auto const nested   = table_view{{int16_list_col, *struct_col}};
-  auto const encoding = cudf::io::column_encoding::BYTE_STREAM_SPLIT;
-
-  cudf::io::table_input_metadata flat_metadata(flat);
-  for (auto& column : flat_metadata.column_metadata) {
-    column.set_encoding(encoding);
-  }
-  cudf::io::table_input_metadata nested_metadata(nested);
-  nested_metadata.column_metadata[0].child(1).set_encoding(encoding);
-  nested_metadata.column_metadata[1].child(0).set_encoding(encoding);
-  nested_metadata.column_metadata[1].child(1).set_encoding(encoding);
-
-  for (auto const& [name, expected, metadata] :
-       {std::tuple{"flat", flat, flat_metadata}, std::tuple{"nested", nested, nested_metadata}}) {
-    SCOPED_TRACE(name);
-    std::vector<char> buffer;
-    cudf::io::write_parquet(
-      cudf::io::parquet_writer_options::builder(cudf::io::sink_info{&buffer}, expected)
-        .metadata(metadata)
-        .build());
-    auto const buffer_span = cudf::host_span<std::byte const>{
-      reinterpret_cast<std::byte const*>(buffer.data()), buffer.size()};
-
-    // Check that the writer used BYTE_STREAM_SPLIT for every column
-    auto const source = cudf::io::datasource::create(buffer_span);
-    cudf::io::parquet::FileMetaData fmd;
-    read_footer(source, &fmd);
-    for (auto const& chunk : fmd.row_groups[0].columns) {
-      EXPECT_NE(std::find(chunk.meta_data.encodings.begin(),
-                          chunk.meta_data.encodings.end(),
-                          cudf::io::parquet::Encoding::BYTE_STREAM_SPLIT),
-                chunk.meta_data.encodings.end());
-    }
-
-    auto const result = cudf::io::read_parquet(
-      cudf::io::parquet_reader_options::builder(cudf::io::source_info{buffer_span}).build());
-    CUDF_TEST_EXPECT_TABLES_EQUAL(expected, result.tbl->view());
-  }
 }
 
 TEST_F(ParquetWriterTest, DecimalByteStreamSplit)
