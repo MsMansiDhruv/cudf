@@ -1040,4 +1040,18 @@ def test_scan_iceberg_deletion_vector_missing_from_puffin(
         paths,
         _deletion_files=("iceberg", ({}, dict.fromkeys(mapped, str(puffin)))),
     )
-    assert_gpu_result_equal(q.sort("a"), engine=engine)
+    if POLARS_VERSION_LT_21:
+        assert_gpu_result_equal(q, engine=engine, check_row_order=False)
+        return
+    match = "has no deletion vector for data file"
+    with pytest.raises(pl.exceptions.ComputeError, match=match):
+        q.collect()
+    if is_streaming_engine(engine):
+        with pytest.RaisesGroup(
+            pytest.RaisesExc(pl.exceptions.ComputeError, match=match),
+            flatten_subgroups=True,
+        ):
+            q.collect(engine=engine)
+    else:
+        with pytest.raises(pl.exceptions.ComputeError, match=match):
+            q.collect(engine=engine)

@@ -13,6 +13,7 @@ import pylibcudf as plc
 
 from cudf_polars.containers import Column, DataFrame
 from cudf_polars.containers.datatype import DataType
+from cudf_polars.utils.versions import POLARS_VERSION_LT_21
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -215,5 +216,10 @@ def _iceberg_positions(
         }
     vector = puffin_cache[puffin].get(path)
     if vector is None:
-        return None
+        if POLARS_VERSION_LT_21:  # pragma: no cover; CI tests the newest polars
+            return None
+        raise pl.exceptions.ComputeError(
+            f"iceberg: deletion vector file {puffin} has no deletion vector "
+            f"for data file {path}"
+        )
     return plc.Column.from_arrow(vector.cast("int64"), stream=stream)
