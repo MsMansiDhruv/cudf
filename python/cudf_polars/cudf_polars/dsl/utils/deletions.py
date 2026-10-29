@@ -80,7 +80,7 @@ def deletion_mask(
         offset,
         stream=stream,
     )
-    if not positions:
+    if not positions:  # pragma: no cover; only Polars 2.0 has no missing Puffin error
         return Column(keep, dtype=DataType(pl.Boolean()))
     (mask,) = plc.copying.scatter(
         [
