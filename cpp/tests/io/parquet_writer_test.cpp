@@ -2386,13 +2386,11 @@ TEST_F(ParquetWriterTest, DeltaBinaryNzIdxTailIteration33)
 
 TEST_F(ParquetWriterTest, DeltaBinaryMixedMiniBlockWidths)
 {
-  // Regression test for INT64 DELTA_BINARY_PACKED blocks that mix mini-blocks packed with 32-bit
-  // and with 64-bit scratch words. Runs of 96 slowly increasing values separated by jumps wider
-  // than 32 bits give the blocks of every page both kinds of mini-blocks, in every arrangement.
-  // The scratch regions of the two kinds of warps used to overlap and corrupt the written values.
   constexpr int num_rows   = 100'000;
   constexpr int run_length = 96;
 
+  // Runs of small steps separated by jumps wider than 32 bits, so that each block mixes
+  // mini-blocks of at most 32 bits and of more than 32 bits
   std::mt19937_64 engine{31337};
   std::uniform_int_distribution<int64_t> jump{int64_t{1} << 40, int64_t{1} << 50};
   std::uniform_int_distribution<int64_t> step{0, (int64_t{1} << 10) - 1};
