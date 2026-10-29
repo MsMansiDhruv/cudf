@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime
 import json
 import re
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pytest
@@ -38,7 +37,6 @@ from pyiceberg.catalog.sql import SqlCatalog  # noqa: E402
 from pyiceberg.partitioning import PartitionField, PartitionSpec  # noqa: E402
 from pyiceberg.transforms import IdentityTransform  # noqa: E402
 from pyiceberg.types import (  # noqa: E402
-    DecimalType,
     DoubleType,
     FloatType,
     IntegerType,
@@ -673,9 +671,9 @@ def test_scan_iceberg_nested_unsupported(
         q.collect(engine=in_memory_engine)
 
 
-def _partition_error_iceberg(
+def _partition_error_scan(
     iceberg_catalog: SqlCatalog, *, file_without_field: bool
-) -> str:
+) -> pl.LazyFrame:
     tbl = iceberg_catalog.create_table(
         "ns.partition_error",
         schema=pyiceberg.schema.Schema(NestedField(1, "a", LongType(), required=False)),
@@ -683,33 +681,29 @@ def _partition_error_iceberg(
     if file_without_field:
         pl.DataFrame([{"a": 1}]).write_iceberg(tbl, mode="append")
     with tbl.update_schema() as update:
-        update.add_column("d", DecimalType(9, 2))
-    with tbl.update_spec() as update:
-        update.add_identity("d")
-    with tbl.update_schema() as update:
-        update.update_column("d", field_type=DecimalType(18, 2))
-    pl.DataFrame(
-        {"a": [2, 3], "d": [Decimal("1.50"), Decimal("2.50")]},
-        schema={"a": pl.Int64, "d": pl.Decimal(18, 2)},
-    ).write_iceberg(tbl, mode="append")
-    return tbl.metadata_location
+        update.add_column("d", LongType())
+    pl.DataFrame({"a": [2, 3], "d": [20, 30]}).write_iceberg(tbl, mode="append")
+    return _scan_iceberg_files(
+        tbl,
+        [task.file.file_path for task in tbl.scan().plan_files()],
+        _default_values=(
+            "iceberg",
+            ({2: "unsupported type change: from: string, to: binary"}, {}),
+        ),
+    )
 
 
 def test_scan_iceberg_partition_error_reads_files(
     engine: pl.GPUEngine, iceberg_catalog: SqlCatalog
 ) -> None:
-    location = _partition_error_iceberg(iceberg_catalog, file_without_field=False)
-    assert_gpu_result_equal(
-        pl.scan_iceberg(location), engine=engine, check_row_order=False
-    )
+    q = _partition_error_scan(iceberg_catalog, file_without_field=False)
+    assert_gpu_result_equal(q, engine=engine, check_row_order=False)
 
 
 def test_scan_iceberg_partition_error_missing_field(
     engine: pl.GPUEngine, iceberg_catalog: SqlCatalog
 ) -> None:
-    q = pl.scan_iceberg(
-        _partition_error_iceberg(iceberg_catalog, file_without_field=True)
-    )
+    q = _partition_error_scan(iceberg_catalog, file_without_field=True)
     match = "unsupported type change"
     with pytest.raises(pl.exceptions.ComputeError, match=match):
         q.collect()
@@ -727,9 +721,7 @@ def test_scan_iceberg_partition_error_missing_field(
 def test_scan_iceberg_partition_error_sliced(
     in_memory_engine: pl.GPUEngine, iceberg_catalog: SqlCatalog
 ) -> None:
-    q = pl.scan_iceberg(
-        _partition_error_iceberg(iceberg_catalog, file_without_field=True)
-    ).head(1)
+    q = _partition_error_scan(iceberg_catalog, file_without_field=True).head(1)
     with pytest.raises(
         pl.exceptions.ComputeError,
         match=re.escape(
