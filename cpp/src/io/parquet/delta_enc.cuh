@@ -76,8 +76,8 @@ inline __device__ void bitpack_mini_block(
 
   // The warps of a block can pack their mini-blocks with different scratch types, so each warp
   // gets a region sized for max_scratch_type. Regions sized by `scratch_type` would overlap.
-  auto const scratch = reinterpret_cast<scratch_type*>(
-    static_cast<max_scratch_type*>(temp_space) + warp_id * warp_size);
+  auto const scratch = reinterpret_cast<scratch_type*>(static_cast<max_scratch_type*>(temp_space) +
+                                                       warp_id * warp_size);
 
   // zero out scratch
   scratch[lane_id] = 0;
