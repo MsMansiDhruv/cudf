@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 
 #include <cudf_test/column_utilities.hpp>
 #include <cudf_test/column_wrapper.hpp>
+#include <cudf_test/default_stream.hpp>
 #include <cudf_test/testing_main.hpp>
 #include <cudf_test/type_lists.hpp>
 
@@ -829,6 +830,27 @@ TEST(BinaryOperationCompiledTest, LargeColumnNoOverflow)
     cudf::reduce(mask->view(), *agg, cudf::data_type{cudf::type_to_id<cudf::size_type>()});
   auto got = static_cast<cudf::numeric_scalar<cudf::size_type>*>(result.get())->value();
   EXPECT_EQ(num_rows, got);
+}
+
+TEST(BinaryOperationCompiledTest, PyModFloatEdgeCases)
+{
+  auto const inf = std::numeric_limits<double>::infinity();
+  auto lhs = cudf::test::fixed_width_column_wrapper<double>{1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 0.0};
+  auto rhs =
+    cudf::test::fixed_width_column_wrapper<double>{inf, -inf, inf, -inf, -1e18, 1e18, -2.0};
+  auto expected =
+    cudf::test::fixed_width_column_wrapper<double>{1.0, -inf, inf, -1.0, -1e18, 1e18, -0.0};
+
+  auto result = cudf::binary_operation(lhs,
+                                       rhs,
+                                       cudf::binary_operator::PYMOD,
+                                       cudf::data_type(cudf::type_id::FLOAT64),
+                                       cudf::test::get_default_stream());
+
+  CUDF_TEST_EXPECT_COLUMNS_EQUAL(expected, result->view());
+
+  auto const [result_data, result_mask] = cudf::test::to_host<double>(result->view());
+  EXPECT_TRUE(std::signbit(result_data.back()));
 }
 
 CUDF_TEST_PROGRAM_MAIN()
