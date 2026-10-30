@@ -17,13 +17,13 @@ from cudf_streaming.channel_metadata import (
 )
 from cudf_streaming.table_chunk import (
     TableChunk,
-    make_table_chunks_available_or_wait,
 )
 from rapidsmpf.shuffler import PartitionAssignment
 from rapidsmpf.streaming.core.actor import define_actor
 from rapidsmpf.streaming.core.message import Message
 
 from cudf_polars.containers import DataFrame
+from cudf_polars.dsl.expr import Col
 from cudf_polars.dsl.ir import Sort
 from cudf_polars.dsl.utils.naming import names_to_indices
 from cudf_polars.streaming.actor_graph.collectives.allgather import AllGatherManager
